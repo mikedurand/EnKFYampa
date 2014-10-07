@@ -27,7 +27,7 @@ CM YOUT - THE OUTPUT ARRAY CONTAINING THE SNOW DATA
 
       subroutine ssib3(IVEG_TYPE,n_u,n_steps,uarg,alpha,t0, 
      &  x0,y0,z_in,yout,PIXEL,n_y,n_x,xout,zout,tend,replicate,rank,
-     &  meas,n_a,f_veg,vcov_dat)!f_radt)
+     &  meas,n_a,f_veg,vcov_dat)
 
       COMMON /XRIB/RIB,temprib
       character*7 run
@@ -98,7 +98,6 @@ c these are for my own time keeping which replaces time in forcing file
       ndd=ndyst
       nhh=nhrst
 
-c
 C ** ASSIGN VEGETATION PARAMETERS FROM INPUT ARRAYS
       call vegin
       CALL VEGIN1(IVEG_TYPE) 
@@ -120,8 +119,6 @@ cm this part is changed by mike, to allow dz(nd) to be read in
         isnow=0
         call layern(tgs,0,nmm,ndd,nhh)
       endif
-
-
 CS                                     10/13/98 
 C ** CREATE THE COEFFICIENTS FOR SURFACE ALBEDO         
       XHC = 0.                                                          
@@ -144,6 +141,7 @@ cm ********************************************
 cm    extract forcing data from uarg array
 
 c      print *, ictrl
+       
 
       icrash=1
 
@@ -167,9 +165,20 @@ cm    check on whether it should be rain or snow...
         obsnow=0.0
       end if
 
+c      if(obsnow.gt.0.0)then
+c        isnowhr=isnowhr+1
+c      end if
+
+cm    revised by R.K(2014.7.7) 
+      if(tm.le.273.16.and.rainf.gt.0.0)then
+        obsnow=rainf
+        rainf=0.0
+      end if
+
       if(obsnow.gt.0.0)then
         isnowhr=isnowhr+1
       end if
+
 
 cm    conversions of forcing data
       UM=(windn**2+winde**2)**0.5 
@@ -302,11 +311,12 @@ cm    this is where i perturb the amount of radiation absorbed by the
 cm      the ground surface...
         
 cm      print *, ictrl,radt(2)
-ccmm        RADT(2)=RADT(2)*exp(f_radt(1,1))
+c        RADT(2)=RADT(2)*exp(f_radt(1,1))
 cm      print *, 'radt(2)... after perturbation:',radt(2)
 
 c      if (ictrl.eq.icrash) print *, 'after radab call'
-      
+     
+      CALL ROOT1 
       CALL STOMA1                                                       
       RSTUN = RST(1)                                 
 
@@ -559,6 +569,7 @@ c      if (ictrl.eq.49) print *, 'before output1 call...'
 c      if (ictrl.eq.49) print *, 'after output1 call...'
 
       END DO
+    
       return
       end                                                               
 cm **************************************************************
@@ -3494,6 +3505,13 @@ CS   Sun add next paragrapg to get soil surface temperature TGS  10/13/98
          TGS=(tsoil+atmp*DTT+btmp*DTT*TD/(1.+ctmp*DTT))/
      &       (1.+btmp*DTT*(1.-ctmp*DTT/(1.+ctmp*DTT)))
          TD=(ctmp*DTT*TGS+TD)/(1.+ctmp*DTT)  
+
+
+cm   October 1 2014: force ground temperature to freezing
+c      if(tgs.lt.273.16)then   
+c         tgs=273.16
+c      endif
+
       END IF
       RETURN                                                            
       END
