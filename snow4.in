@@ -1,0 +1,26 @@
+      parameter (nd=4)
+      common/array1/ tssn(nd),tssno(nd),
+     &      bw(nd),bwo(nd),
+     &      bl(nd),blo(nd),
+     &      bi(nd),bio(nd),
+     &      dz(nd),dzo(nd),qk(nd),
+     &      fl(nd),flo(nd),
+     &      fi(nd),fio(nd),
+     &       h(nd),ho(nd),gdia(nd),ddd(nd),
+     &       w(nd),wo(nd),dsol(nd),ckt(nd),vwc(nd),
+     &      pdzdtc(nd),porosity(nd),dmass(nd),wf(nd),
+     &      dhp(nd),dmlt(nd),dmlto(nd),dee(nd),
+     &      bt(nd),bto(nd),dddt(nd),df(nd)
+c...............................................................
+      common/array2/ thk(nd),s(nd),so(nd),ss(nd),ct(nd),cto(nd),
+     &       sso(nd),dicevol(nd),dliqvol(nd),salbo(2,2)
+c...............................................................
+      common/param1/solar,tkair,snroff,hroff,dksatsnow,
+     &              prcp,prcps,prcpw,snowdepth,swe,obsnow
+      common/param2/bifall,blfall,flfall,fifall,ssisnow
+      common/paramc/n,dlm,rhowater,dice,flmin,flmax,
+     &              dzmin,womin,cl,irand,sg1(3),sg2,sg3,sg4
+      common/param3/ddfall,rhofall,dzfall,uvai,uvbar,gsize
+c............................................................
+   
+

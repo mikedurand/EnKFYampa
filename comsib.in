@@ -1,0 +1,236 @@
+C========================================================================       
+C                                                                               
+C     SIB COMMON BLOCK : 1-D VERSION                                            
+C                                                           1 AUGUST 1988       
+C========================================================================       
+C------------------------------------------------------------------------       
+C        PROGNOSTIC VARIABLES                                                   
+C------------------------------------------------------------------------       
+      COMMON/ STEPV  / TC, TS, TGS, TD, CAPAC(2), WWW(3)          
+C------------------------------------------------------------------------       
+C        PHYSICAL CONSTANTS                                                     
+C------------------------------------------------------------------------       
+      COMMON/ CONST  / PIE, TIMCON, CPAIR, RHOAIR, PSY, HLAT, G, VKC,
+     &                 SNOMEL, STEFAN, TF, CLAI, CW ,XTEM1, XTEM2,NYMD       
+C------------------------------------------------------------------------       
+C        VEGETATION AND SOIL PARAMETERS                                         
+C------------------------------------------------------------------------
+      COMMON/ VEGOPT / TRAN(2,3,2), REF(2,3,2)                          
+      COMMON/ VSTATE / GREEN(2), VCOVER(2), CHIL(2)                     
+      COMMON/ VPHYS  / RSTPAR(2,3), TOPT(2), TLL(2), TU(2), DEFAC(2),   
+     &                 PH1(2), PH2(2)                                   
+      COMMON/ VMORPH / ZLT(2), Z0, D, Z2, Z1, RDC, RBC                  
+      COMMON/ ROOTS  / RPLANT(2), ROOTD(2), ROOTL(2), RDRES(2),         
+     &                 ROOTCA(2), RLMAX(2), rootp(3) 
+      COMMON/ SOILS  / SOREF(3), BEE, PHSAT, POROS, SATCO, SLOPE,       
+     &                 ZDEPTH(3)                                        
+C------------------------------------------------------------------------       
+C        INPUT ATMOSPHERIC AND SITE DATA                                        
+C------------------------------------------------------------------------       
+      COMMON/ ATMOS  / EM, TM, UM, ZM, PSUR, PPC, PPL, RADN(3,2),  
+     &                 SUNANG, SWDOWN, RNETM, CLOUD, swup
+C------------------------------------------------------------------------       
+C        SITE PARAMETERS SPECIFIC TO 1-D MODEL OPERATION                        
+C------------------------------------------------------------------------       
+      COMMON/ CAEROD / G1, G2, G3, ZTZ0, CORB1, CORB2, HA, HT,       
+     &                 ZWIND, ZMET                              
+      COMMON/ SITE   / ZLONG, ZLAT, SALB(2,2), RAB(2,3,2)       
+      COMMON/ STEPS  / DTT, ITRUNK, ILW, NITER, ITER, ISPARE  
+      COMMON/ GOVERN / TIME, YEAR, MONTH, DAY, HOUR         
+C------------------------------------------------------------------------       
+C        VARIABLES RETURNED TO G.C.M. ( ET(KG), H(W M-2), RUNOFF(M),  
+C                                       LW(W M-2), DRAG(KG M-1 S-2) )      
+C------------------------------------------------------------------------       
+      COMMON/ DONOR  / ETMASS, HFLUX, ROFF, ZLWUP, DRAG              
+C------------------------------------------------------------------------       
+C        VARIABLES CALCULATED FROM ABOVE AND AMBIENT CONDITIONS                 
+C------------------------------------------------------------------------       
+      COMMON/ RESIST / RA, RB, RD, RCC, RG                  
+      COMMON/ GRADS  / TA, EA, ETC, ETGS, GETC, GETGS ,U2, USTAR  
+      COMMON/ RADABS / ALBEDO(2,3,2), EXTK(2,3,2), RADT(2), THERMK, 
+     &                 RADFAC(2,2,2), RADSAV(12)               
+      COMMON/ SURFRS / PAR(2), PD(2), RST(2), RSTFAC(2,4), DROP, RSOIL
+      COMMON/ POTENT / PHL(2), PHROOT(2), ROOTR(2)         
+      COMMON/ HYDROL / PHSOIL(3), SATCAP(2), SNOWW(2) , snden 
+      COMMON/ STORES / CCX, CG                             
+      COMMON/ DELTS  / DTC, DTG                       
+C------------------------------------------------------------------------       
+C        HEAT FLUXES : C-CANOPY, G-GROUND, T-TRANS, E-EVAP  IN J M-2            
+C------------------------------------------------------------------------       
+      COMMON/ FLUX   / ECT, ECI, EGT, EGI, EGS, HC, HG, CHF, SHF,       
+     &                 ECMASS, EGMASS                       
+C------------------------------------------------------------------------       
+C        ARRAYS FOR LOADING GCM PARAMETER FIELDS                                
+C------------------------------------------------------------------------       
+      COMMON/ SFILL / STRAN(12,2,3,2), SREFF(12,2,3,2),         
+     &                SGREEN(12,12,2), SVCOVR(12,12,2), SCHIL(12,2),  
+     &                SRSTP(12,2,3), STOPT(12,2),                   
+     &                STL(12,2), STU(12,2), SDEFAC(12,2), SPH1(12,2),  
+     &                SPH2(12,2), SZLT(12,12,2),                   
+     &                SZ0(12,12), SD(12,12), SZ2(12,12), SZ1(12,12),  
+     &                SRBC(12,12), SRDC(12,12),           
+     &                SRPLAN(12,2), SROOTD(12,2), SRLMAX(12,2),      
+     &                SRDRES(12,2), SROOTC(12,2), SSOREF(12,3),      
+     &                SBEE(12), SPHSAT(12), SPOROS(12), SSATCO(12), 
+     &                SSLOPE(12), SZDEP(12,3),  SROOTL(12,12,2)                
+C
+C----------------------------------------------------------------------         
+c
+c----------------------------------------------------------------------  
+c
+      common /comout1/
+cs  sun add nyy on 02/24/99 start
+     &         nyy,
+cs  sun add nyy on 02/24/99  end
+     &         nmm, ndd, nhh, nout, tprec, sibnet(240,31,24), iist(24),
+     &         amust(240,31,24), amlh(240,31,24), amnet(240,31,24),
+     &         amneth(240,31,24),nroot,swcan,swgnd,xnetlw(240,31,24),
+     &         xdownlw(240,31,24),xuplw(240,31,24),
+     &         amht(240,31,24), amevap(240,31,24), amtg(240,31,24),
+     &         amtgf(240,31,24), amtg3(240,31,24), iist2(24), iist3(24),
+     &         amtg4(240,31,24),iist4(24),iiabb(24),iiabh(24),iialb(24),
+     &         amww1, amww2, amww3, ismm, isdd, ishh, isday, iiep(24),
+     &         istartday, irec60, irec61, irec62, nymdh, amga, amgs,
+     &         rmsust, rmsht, rmsevap, rmstgb, rmsswupb, iilh(24),
+     &         iiht(24), iishfb(24),iiust(24),iinetb(24),rmstgf,rmstg3,
+     &         iineth(24),iishfh(24), rmsswuph,rmstg4,tgeff,var1,var2
+c
+c----------------------------------------------------------------------
+c
+      common /comave1/
+     &         mthst, ndyst, nobs, xtd(240,31,24),
+     &         xroff(240,31,24), xprec(240,31,24), xtc(240,31,24),
+     &         amtm(240,31,24),  xta(240,31,24),   xtgs(240,31,24),
+     &         xw1(240,31,24),   xw2(240,31,24),   xw3(240,31,24),
+     &         xshf(240,31,24),  xchf(240,31,24),  xlh(240,31,24),
+     &         xust(240,31,24),  xcap1(240,31,24), xcap2(240,31,24),
+     &         xht(240,31,24),   xevap(240,31,24), xect(240,31,24),
+     &         xeci(240,31,24),  xegt(240,31,24),  xegi(240,31,24),
+     &         xegs(240,31,24),  xrt(240,31,24),   xrb(240,31,24),
+     &         xrd(240,31,24),   xraa(240,31,24),  xrs(240,31,24),
+     &         xrc(240,31,24),   xrf1(240,31,24),  xrf2(240,31,24),
+     &         xrf3(240,31,24),  sibswup, amshf(240,31,24),
+     &         amswup(240,31,24),amswdown(240,31,24),amshfh(240,31,24),
+     &         amswuph(240,31,24),
+     &         sibalbedo, obsalbedo(240,31,24),
+     &         obsalbedh(240,31,24)
+c
+c----------------------------------------------------------------------
+c
+      common /comave2/
+     &         xaveust(24), xaveht(24), xaveevap(24), xavetgs(24),
+     &         xtotswup(24), amaveust(24), amaveht(24), amaveevap(24),
+     &         amavetgb(24), avesibalb(24), aveobsalbb(24),
+     &         aveobsalh(24), amavetgf(24), amave3tg(24),amave4tg(24),
+     &         amtotswupb(24), amtotswdown(24), amavelh(24),
+     &         xavelh(24), xaveshf(24), amaveshfb(24),amaveshfh(24),
+     &         xdayht(240,31), xdayevap(240,31), amdayht(240,31),
+     &         amdayevap(240,31), dayprec(240,31), dayrunoff(240,31),
+     &         amdayswuh(240,31), amdayalbh(240,31), amtotswuph(24),
+     &         xdayswup(240,31), amdayswub(240,31), amdayswdown(240,31),
+     &         amdayalbb(240,31), xdayalb(240,31), xdaylh(240,31),
+     &         amdaylh(240,31), amdaytm(240,31), xdayta(240,31),
+     &         xdaytd(240,31),  xdaytc(240,31),  amdayntb(240,31),
+     &         xdaylw(240,31), xdaylwup(240,31),xdaylwdown(240,31),  
+     &         xdaynet(240,31), xdaytgs(240,31), amdaytgb(240,31),
+     &         amdaytgf(240,31), amda3tgs(240,31),aveobsalbh(24),
+     &         xdayshf(240,31), amdayshfb(240,31),amdayshfh(240,31),
+     &         amavetm(24), xaveta(24),   xavetd(24), totprec,
+     &         xavetc(24),amavenet(24),xavelw(24),xavenet(24),totroff,
+     &         amaventh(24),amdaynth(240,31), amda4tgs(240,31),totevap,
+     &         amdaynet(240,31), amdayshf(240,31),amdayalb(240,31),
+     &         amdayswup(240,31),amdaytgs(240,31),iishf(24),iisnd(24),
+     &         amaveshf(24),amavetgs(24),aveobsalb(24),amtotswup(24)
+      common /comave4/
+     &        xavect(24), xaveci(24), xavegt(24),
+     &        xavegi(24), xavegs(24), xavert(24), xaverd(24),
+     &        xaverb(24), xaveraa(24),xaverc(24), xavers(24),
+     &        xavef1(24), xavef2(24), xavef3(24)
+      common /comday3/
+     &           xdayw1(240,31), xdayct(240,31), xdayci(240,31),
+     &           xdayw2(240,31), xdayw3(240,31), xdayust(240,31),
+     &           amdayust(240,31),
+     &           xdaygt(240,31), xdaygi(240,31),xdaygs(240,31),
+     &           xdayrt(240,31), xdayrd(240,31), xdayrb(240,31),
+     &          xdayraa(240,31), xdayrc(240,31), xdayrs(240,31),
+     &          xdayf1(240,31), xdayf2(240,31),  xdayf3(240,31),
+     &          xdaysm50(240,31),xdaysm1m(240,31),
+     &          xdaysm1(240,31),xdaysm2(240,31),xdaysm3(240,31)
+cjyj---------------------------------------------------------
+c
+      common /compost/
+     &   xvenet(24), xveust(24), xveht(24), xvelh(24), xveevap(24),
+     &   xveshf(24), xvetgs(24), xvect(24), xveci(24), xvegt(24),
+     &   xvegi(24), xvegs(24), xadj,xadj1,ctlpa,frac(2,2),nkg,tsalb(2),
+     &   tradfac(2,2),tradsav,w1ini,w2ini,w3ini,w1end,w2end,w3end
+      common / pilpint / irepeat,imodel,istat,iyr,imoist,iener,iclim,
+     1                   nyr,nya,nylg,nytw,nytc,ymlent,ymsen,
+     2                   ymltsd,ymsnsd
+      common / pilpreal / rnoff(175320), snm(175320), bedo(175320),
+     1        sw1(175320),sw2(175320),sw3(175320),
+     2        rnofft(175320), rnoffb(175320),
+     3        rnoffs(175320), soildif(175320), soildra(175320) 
+c
+c----------------------------------------------------------------------
+cs Sun add following dimension is to output informtions
+cs for snow layers and soil layers.
+cs   start  on 02/13/99
+      common /comave3/
+     &  xtsn1(240,31,24),xtsn2(240,31,24),xtsn3(240,31,24),
+     &  amtsn1(240,31,24),amtsn2(240,31,24),amtsn3(240,31,24), 
+     &  xdaytsn1(240,31),xdaytsn2(240,31),xdaytsn3(240,31),
+     &  amdaytsn1(240,31),amdaytsn2(240,31),amdaytsn3(240,31),
+     &  xavetsn1(24),xavetsn2(24),xavetsn3(24),
+     &  amavetsn1(24),amavetsn2(24),amavetsn3(24),
+cs 
+     &  xsndpth(240,31,24),amsndpth(240,31,24),
+     &  xdaysndpth(240,31),amdaysndpth(240,31),
+     &  xavesndpth(24),amavesndpth(24),
+cs
+     &  xswe(240,31,24),amswe(240,31,24),
+     &  xdayswe(240,31),amdayswe(240,31),
+     &  xaveswe(24),amaveswe(24),
+cs     
+     &  xwatereq(240,31,24),amwatereq(240,31,24),
+     &  xdaywatereq(240,31),amdaywatereq(240,31),
+     &  xavewatereq(24),amavewatereq(24),
+cs    
+     &  amw1(240,31,24),amw2(240,31,24),amw3(240,31,24), 
+c    &  xdayw1(240,31),xdayw2(240,31),xdayw3(240,31), 
+     &  amdayw1(240,31),amdayw2(240,31),amdayw3(240,31), 
+     &  xavew1(24),xavew2(24),xavew3(24), 
+     &  amavew1(24),amavew2(24),amavew3(24) 
+c----------------------------------------------------------------------
+c here is my own stuff
+      common /myown/
+     & percent(12),xdast(240,31,24),xsoilwet(240,31,24),
+     & xrnoffb(240,31,24),xqmoist1(240,31,24),xqmoist2(240,31,24),
+     & xqmoist3(240,31,24),xdaydast(240,31),xdaysoilwet(240,31),
+     & xdayeci(240,31),xdayegs(240,31),xdayect(240,31),
+     & xdayrnoffb(240,31),xdayqmoist1(240,31),xdayqmoist2(240,31),
+     & xdayqmoist3(240,31),xdaycap1(240,31),xdayswnet(240,31),loop,
+     & vegarray(12,12,12),greenarray(12),varray(12,63),
+     & force(175320,10),xssss(240,31,24),xdayssss(240,31),
+     & xtgeff(240,31,24),xdaytgeff(240,31),xdaysnowalb(240,31),
+     & xdis(240,31,24),xdaydis(240,31),frar,xdelsm(240,31,24),
+     & xdaydelsm(240,31),xdelsoilwet(240,31,24),idastflag(240,31),
+     & xdaydelsoilwet(240,31),xdelswe(240,31,24),
+     & xdaydelswe(240,31),xdelcap1(240,31,24),xdaydelcap1(240,31),
+     & xdayrnoffs(240,31),xrnoffs(240,31,24),xdrag(240,31,24),
+     & xdaydrag(240,31),xdayegi(240,31),xarea,xswup(240,31,24),
+     & xsalb(240,31,24),icounter,xdayegt(240,31),addegs,addegi,
+     & addect,addeci,addsnow,addrain,addevap,addqs,addqsb,adddelsm,
+     & adddelswe,adddelsurfstor,adddelcap,addsw,addlw,addlh,addht,
+     & addgh,master,wholerunoff(87648),addrunoff1,addrunoff2,
+     & addrunoff3,addrunoff4,addrunoff5,addrunoff6,addrunoff7,
+     & addrunoff8,addrunoff9,addrunoff10
+
+      COMMON / VEGOPT/ TRAN0(13,2,3,2), REF0(13,2,3,2)                          
+      COMMON / VSTATE/ GREEN0(13,12,2), VCOVER0(13,12,2), CHIL0(13,2)
+      COMMON / VPHYS / RSTPAR0(13,2,3),TOPT0(13,2),TL0(13,2),TU0(13,2), 
+     &                 DEFAC0(13,2), PH10(13,2), PH20(13,2)
+      COMMON / VMORPH/ ZLT0(13,12,2), Z00(13,12), D0(13,12), 
+     &                 Z20(13,12), Z10(13,12), RDC0(13,12), RBC0(13,12)
+      COMMON / ROOTS / ROOTD0(13,2)         
+      COMMON / SOILS / SOREF0(13,3), BEE0(13), PHSAT0(13), POROS0(13),
+     &                 SATCO0(13), SLOPE0(13), DEPTH0(13,3)
