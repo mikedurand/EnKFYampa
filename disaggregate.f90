@@ -15,11 +15,11 @@ real,intent(in) :: nldas_forcing(n_u,nsteps,n_pf),elevation(n_ps),zf(n_pf,2),&
 logical,intent(in) :: gen_switch
 !output
 real,intent(out) :: u(n_u,nsteps,n_ps)
-integer,intent(out) :: mikesmap(625)
+integer,intent(out) :: mikesmap(1479)
 !locals
 integer :: i,j,k,p,num_i,i_i,min_loc
 integer,dimension(:),allocatable :: my_pix
-real :: dist(625,9), w(625,9), elev_forc(9),tmp(9),wind(nsteps)
+real :: dist(1479,49), w(1479,49), elev_forc(49),tmp(49),wind(nsteps)
 
 ! 1) COMPUTE DISTANCE FROM EACH STATE PIXEL CENTER TO EACH NLDAS PIXEL CENTER
 do i=1,n_ps
@@ -35,7 +35,7 @@ end do
 
 ! 2.1) Figure out which state pixels are closest to each nldas pixel
 do i=1,n_ps
-  do i_i=1,9
+  do i_i=1,49
     tmp(i_i)=dist(i,i_i)
   enddo
   call get_min_loc(tmp,min_loc,n_pf)
@@ -73,7 +73,7 @@ end do
 do p=1,n_ps
   !3.1
   ! assign forcing data for pixel p based on nearest neighbor 
-  do i_i=1,9
+  do i_i=1,49
     tmp(i_i)=dist(p,i_i)
   enddo
   call get_min_loc(tmp,min_loc,n_pf)

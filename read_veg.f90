@@ -8,7 +8,7 @@ INTEGER :: I
 
 OPEN(UNIT=1,FILE='veg_map.in',STATUS='OLD')
 DO I=1,N_YP
-  READ(1,'(I4)') VEG_MAP(I)
+  READ(1,'(I6)') VEG_MAP(I)
 END DO
 CLOSE(1)
 
