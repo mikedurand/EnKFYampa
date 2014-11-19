@@ -2,7 +2,7 @@ C=======================================================================
 C                THIS IS A SIMPLIFIED SIB MODEL                              
 C=======================================================================
 
-CM THIS CODE OF YONGKANG XUE'S HAS BEEN MODIFIED TO RUN AS A SUBROUTINE
+CM THIS CODE OF YONGKANG XUES HAS BEEN MODIFIED TO RUN AS A SUBROUTINE
 CM INSIDE AN ENKF RADIOMETRIC DATA ASSIMILATION FOR ESTIMATION OF SWE.
 CM THE VEGIN1, VEGIN2 AND CNTROLS SUBROUTINES NO LONGER READ DATA FROM 
 CM FILES, BUT EXTRACT IT FROM THESE ARRAYS; SOME VALUES THAT ARE 
@@ -27,7 +27,7 @@ CM YOUT - THE OUTPUT ARRAY CONTAINING THE SNOW DATA
 
       subroutine ssib3(IVEG_TYPE,n_u,n_steps,uarg,alpha,t0, 
      &  x0,y0,z_in,yout,PIXEL,n_y,n_x,xout,zout,tend,replicate,rank,
-     &  meas,n_a,f_veg,vcov_dat)
+     &  meas,n_a,f_veg,vcov_dat) ! ZenithAngle,Energy_out,Effective_PPT)
 
       COMMON /XRIB/RIB,temprib
       character*7 run
@@ -36,15 +36,59 @@ CM YOUT - THE OUTPUT ARRAY CONTAINING THE SNOW DATA
 
 cm  these lines to define sizes for arrays now used to initialize 
 cm    ssib and call it as a subroutine
-      integer n_u,n_steps,PIXEL,n_y,n_x,replicate,rank,meas
+      integer n_u,n_steps,PIXEL,n_y,n_x,replicate,rank,meas,counter
       real uarg(n_u,n_steps)
       real alpha(n_a),t0(5),x0(12),y0(n_y),z_in(2),tend(5)
       real vcov_dat
 cm    the dimension of f_veg is consistent with mvnrnd
-      real yout(n_y,n_steps),xout(n_x,n_steps),zout(n_steps),f_veg(1,1)
-      real f_radt(1,1)
+      real yout(n_y,n_steps),xout(n_x,n_steps),zout(n_steps)
+      real sweold,swenew,sag1,sag2
+      real ALBEDOOUT(n_steps,2,2)
+      real ZenithAngle(n_steps)
+	  real Energy_out(8,n_steps)
+	  real Effective_PPT(1,n_steps)
+	  real f_veg(1,1)
+c         real swenew_Vec(n_steps)
+c         real sweold_Vec(n_steps)
+c         real sag1_Vec(n_steps)
+c         real sag2_Vec(n_steps)
 
-cm      print *, 'ssib3: f_radt=',f_radt(1,1)
+cl ================ declaration of MEMLS parameters ====================
+cl declaration for parameters in MEMLS3 and MEMLS4, NOV 16 2012
+cl 4-layer memls parameters
+         integer :: n_rlz4,n_rz4,n_yz4,n_ypz4,n_yrz4,n_zz4,n_zpz4,
+     &  n_zrz4,n_cz4,n_xz4,n_az4,n_uz4,meas_switch4,n_bdrf4
+
+      integer :: ierr4
+      integer, dimension(1) :: iveg_type4
+      integer, dimension(:), allocatable :: ctrl4
+      real, dimension(1) :: tbs,tbs4
+      real, dimension(:),allocatable :: freq4,theta_m4
+      real, dimension(:,:),allocatable :: y4memls,xz4
+      real, dimension(:,:,:),allocatable :: uz4
+      real, dimension(1,1) :: f_veg_m4,albedo_m4
+      real, dimension(1,2) :: bdrf4
+      real, dimension(2,1) :: zz4,tbraw,tbraw4
+      integer :: month_m4
+
+cl 3-layer memls parameters
+         integer :: n_rlz3,n_rz3,n_yz3,n_ypz3,n_yrz3,n_zz3,n_zpz3,
+     &  n_zrz3,n_cz3,n_xz3,n_az3,n_uz3,meas_switch3,n_bdrf3
+
+      integer :: ierr3
+      integer, dimension(1) :: iveg_type3
+      integer, dimension(:), allocatable :: ctrl3
+      real, dimension(1) :: tbs3,CPEX
+      real, dimension(:),allocatable :: freq3,theta_m3
+      real, dimension(:,:),allocatable :: y3memls,xz3
+      real, dimension(:,:,:),allocatable :: uz3
+      real, dimension(1,1) :: f_veg_m3,albedo_m3
+      real, dimension(1,2) :: bdrf3
+      real, dimension(2,1) :: zz3,tbraw3
+      integer :: month_m3
+cl ================ MEMLS declaration done ====================
+
+
 
 CM THE ctlpa AND nroot VARIABLE WILL BE HARDCODED IN (read from file before)
 c     control stomatal resistance;
@@ -53,6 +97,7 @@ c     final stomatal resistance=ctlpa * stomatal resistance
 c     control root depth, nroot=1: root depth has no control: nroot not
 c     =1: root depth is controled by rootp, which are read in vegin2.
       nroot=1
+      f_veg(1,1)=0.0
 
 cm  print out all inputs...
 c      print *, iveg_type,n_u,n_steps,alpha,t0,x0,y0,z_in,PIXEL,
@@ -67,10 +112,11 @@ CM INITIALIZE SOME VARIABLES
 cm  put in a check that n_x is 13, not 12, since i used 12 for so long...
       if(n_x.ne.13)then
         print *, 'error! n_x=',n_x,'; n_x should be 13...'
-      end if
+      end if   
 
-      CALL CNTROLS(MDAY,alpha,t0,x0,y0,z_in,pixel,n_a)
+      CALL CNTROLS(MDAY,alpha,t0,x0,y0,z_in,pixel,n_a) 
       CALL CONSTS
+  
       CUMERROR = 0
       ERRORCUM = 0
       xqlast1 = 0.
@@ -79,7 +125,11 @@ cm  put in a check that n_x is 13, not 12, since i used 12 for so long...
       xlastwet =0.
       xlastswe = 0.
       xlastcap1 = 0.
- 
+      
+      sweold = 0.0
+      swenew = 0.0
+
+
 c     four lines changed by mike to allow time to be read in and used
 c      iyr=1979
       iyr=YEAR
@@ -97,11 +147,12 @@ c these are for my own time keeping which replaces time in forcing file
       nmm=mthst
       ndd=ndyst
       nhh=nhrst
-
+c
 C ** ASSIGN VEGETATION PARAMETERS FROM INPUT ARRAYS
       call vegin
       CALL VEGIN1(IVEG_TYPE) 
-      CALL VEGIN2(IVEG_TYPE,nmm,f_veg,vcov_dat)
+      CALL VEGIN2(IVEG_TYPE,nmm,f_veg,vcov_dat) 
+  
 c
 cjyj--control parameter of snow model
       MDLSNO=0
@@ -114,7 +165,9 @@ cm this park changed by mike
       call getinput 
       swe=CAPAC(2)    
 cm this part is changed by mike, to allow dz(nd) to be read in
+
       snowdepth=dz(1)+dz(2)+dz(3)      
+      
       if(mdlsno.eq.0.and.snowdepth.gt.sd_cr) then
         isnow=0
         call layern(tgs,0,nmm,ndd,nhh)
@@ -136,17 +189,14 @@ C ** CREATE THE COEFFICIENTS FOR SURFACE ALBEDO
 cm ********************************************
 cm   START OF TIME LOOP
 cm ********************************************
-
       DO ICTRL=1,N_STEPS 
 cm    extract forcing data from uarg array
 
-c      print *, ictrl
-       
+!      print *, ictrl
 
       icrash=1
 
       swdown=uarg(1,ICTRL)
-cm    obsnow and rainf: precip variables should have units mm/s
       rainf=uarg(2,ICTRL)
       obsnow=uarg(3,ICTRL)
       dirdown=uarg(4,ICTRL)
@@ -157,19 +207,20 @@ cm    obsnow and rainf: precip variables should have units mm/s
       winde=uarg(9,ICTRL)
       afac=1.0
 
-c      if(ictrl.eq.icrash) print *, 'U=',uarg(1:9,ictrl)
+
+cl    dongyue constrain the soil tempc
+      if(tgs.lt.273.16)then
+          tgs=273.16
+      end if
+
+c     if(ictrl.eq.icrash) print *, 'U=',uarg(1:9,ictrl)
 
 cm    check on whether it should be rain or snow...
       if(tm.gt.273.16.and.obsnow.gt.0.0)then
         rainf=obsnow
         obsnow=0.0
       end if
-
-c      if(obsnow.gt.0.0)then
-c        isnowhr=isnowhr+1
-c      end if
-
-cm    revised by R.K(2014.7.7) 
+      
       if(tm.le.273.16.and.rainf.gt.0.0)then
         obsnow=rainf
         rainf=0.0
@@ -178,7 +229,6 @@ cm    revised by R.K(2014.7.7)
       if(obsnow.gt.0.0)then
         isnowhr=isnowhr+1
       end if
-
 
 cm    conversions of forcing data
       UM=(windn**2+winde**2)**0.5 
@@ -263,9 +313,13 @@ c      if (ictrl.eq.icrash) print *, 'ictrl=',ictrl,'before main prog.'
       UM = AMAX1(UM,0.25)                                               
       SWDOWN = AMAX1(SWDOWN,0.1)                                        
       IHOUR = NHH
-C
+
 c ** calculate solar zenith angle    
-      CALL RADC2(SUNANG)                                                
+      CALL RADC2(SUNANG)
+     
+      ! Manu - is changing this so that the Zentih Angle is the same computed
+      ! as a fucntion of slope and aspect from the disaggregation file
+      SUNANG = ZenithAngle(ICTRL)
       SUNANG = AMAX1(0.01,SUNANG)  
 c                                 
 C ** CALCULATE THE CLOUD COVER USING AN EMPIRICAL EQUATION             
@@ -300,23 +354,21 @@ Cm  initialize snow vars -mike
          ssss=sdep
       else
          ssss=capac(2)*snden
+ 
       END IF
 
 c      if (ictrl.eq.icrash) print *, 'before radab call'
 
 cm MAIN RADIATION CALLS
-      CALL RADAB (ISNOW,MDLSNO,afac,ictrl,PIXEL)
-
-cm    this is where i perturb the amount of radiation absorbed by the 
-cm      the ground surface...
-        
-cm      print *, ictrl,radt(2)
-c        RADT(2)=RADT(2)*exp(f_radt(1,1))
-cm      print *, 'radt(2)... after perturbation:',radt(2)
+      CALL RADAB (ISNOW,MDLSNO,afac,ictrl,PIXEL,swenew,sweold,
+     &     sag1,sag2)
+  
+c Manu set sweold = swe, this is needed in CLM albedo model
+           sweold = swe
 
 c      if (ictrl.eq.icrash) print *, 'after radab call'
-     
-      CALL ROOT1 
+
+      CALL ROOT1
       CALL STOMA1                                                       
       RSTUN = RST(1)                                 
 
@@ -348,18 +400,15 @@ CS   Chanfe INTERC to INTERCS (****,***)                   ON 10/13/98
 
 c      if (ictrl.eq.icrash) print *, 'before intercs calls'
 
-
       CALL INTERCS (ISNOW,p0,CSOIL,dzsoil,CHISL)
 
 c      if (ictrl.eq.icrash) print *, 'after intercs calls; ',
-c     &  'isnow=',isnow 
+c     &  'isnow=',isnow     
 
       IF (MDLSNO.eq.0.and.ISNOW.EQ.0) THEN
          prcp=p0
          tkair=TM
 c      if (ictrl.eq.icrash) print *, 'before getmet calls'
-
-
          CALL getmet (iptype,UM,nmm,nhh,ndd,ictrl,pixel)
                                                                        
 c ** aerodynamic resistance and flux calculations
@@ -370,17 +419,26 @@ c ** aerodynamic resistance and flux calculations
         solar=solar+RADFAC(IVEG,IWAVE,IRAD)*RADN(IWAVE,IRAD)
 1100    CONTINUE
 
-
        CALL snow1st (dtt,TM,solsoil,ISNOW,nmm,ndd,nhh,ictrl,pixel,imike)
-
 c      if (ictrl.eq.icrash) print *, 'before temrs2 calls'
+
+c         if ( (ictrl.ge.5500).and.(ictrl.lt.5502) ) then
+c         if  (ictrl.eq.5500) then
+c         print*,ictrl,'SW1=',swe,'c(2)',capac(2),'SD',snowdepth,'DENS',snden
+c      endif
+
 
        CALL TEMRS2 (MDLSNO,ISNOW,CHISL,tsoil,solsoil,meas,
      &   CSOIL,dzsoil,wfsoil,ictrl,pixel,y0,n_y,replicate,rank)
 
-c      if (ictrl.eq.icrash) print *, 'after temrs2 calls'
 
-        call old
+          call old 
+
+
+c         if ( (ictrl.ge.5500).and.(ictrl.lt.5502) ) then
+c      if  (ictrl.eq.5500) then
+c         print*,ictrl,'SW2=',swe,'c(2)',capac(2),'SD',snowdepth,'DENS',snden
+c      endif
 
       ELSE 
 cm      if there is snowfall, find snowfall density (get_met)and 
@@ -398,14 +456,13 @@ c          if (ictrl.eq.icrash) print *, 'before getmet'
 c          if (ictrl.eq.icrash) print *, 'before newsnow'
 cm        The 'getmet' subroutine sets 'iptype' to 0 if the depth of
 cm        newsnowfall is less than some critical value.
-          if(iptype.ne.0) call newsnow(ISNOW,nmm,ndd,nhh,ictrl,pixel)
+          if(iptype.ne.0)  call newsnow(ISNOW,nmm,ndd,nhh,ictrl,pixel)
 c          if (ictrl.eq.icrash) print *, 'after getmet, newsnow calls'
-        endif
+          endif
 
         if(gsize>0.) call graingrowth(ISNOW)
 
 c        if (ictrl.eq.icrash) print *, 'before temrs1 calls'
-
 
         CALL TEMRS1 (MDLSNO,ISNOW,rank,replicate,pixel,ictrl,icrash)
  
@@ -422,32 +479,47 @@ c      if (ictrl.eq.icrash) print *, 'after updat1 calls'
 cm RELAYER SNOWPACK DEPENDING ON CHANGE IN DEPTH
       IF (MDLSNO.eq.0.and.ISNOW.EQ.0) THEN
          CAPAC(2)=swe
+         swenew = swe
 
 cm       mike is adding this on jan 31 05 to solve an issue
 cm         that comes up when the snow melts completely away from a 
 cm         pack with snowdepth > 0.05 m
-          snowdepth=dzo(1)+dzo(2)+dzo(3)
+
+      snowdepth=dzo(1)+dzo(2)+dzo(3) 
 
          If (snowdepth.lt.SD_CR) Then
            ISNOW=1
            call LAYER1 (CSOIL,TGS,dzsoil,h,w,snowdepth,
      &            swe,stemp,nd,gsize,gdia)
-         Else 
+         Else
+ 
+c          if (ictrl.le.5469) then 
            ISNOW=0
            call modnodenew
+c          if (ictrl.eq.5500) print*,'1.MODcalled'
+c          endif
+   
          End if
       ELSE IF(MDLSNO.eq.0.and.ISNOW.GT.0) THEN
          If (capac(2)*snden.gt.SD_CR) Then
+ 
+ 
            swe=CAPAC(2)                           
            snowdepth=capac(2)*snden 
            ISNOW=0
+   
+
+   
            CALL LAYERN (TGS,1,nmm,nhh,ndd)
          Else
            ISNOW=1
 cm    in order to output the snow, update snowdepth variable
+
+
            snowdepth = capac(2)*snden
-           swe = capac(2)
-cm    end of mike's changes
+          swe = capac(2)
+   
+cm    end of mikes changes
          End if
       END IF
 
@@ -480,12 +552,7 @@ cm      end if
       if ((nmm.eq.240).and.(ndd.eq.31).and.(nhh.eq.24))
      & write(6,*) 'CUMULATIVE ERROR = ',CUMERROR
 
-      if (abs(error).gt.0.0001) then
-      print*, ndd,nhh,'STOPPED Water out of balance by ',error,
-     & 'replicate=',replicate,'rank=',rank,'pixel=',pixel,'ictrl=',
-     & ictrl
-      STOP
-      endif
+
 
 c      if (ictrl.eq.49) print *, 'before energy balance checks, dtt=',
 c     &  dtt
@@ -496,6 +563,22 @@ c     &  dtt
       ZRHS = HFLUX + (ECT + ECI + EGT + EGI + EGS)/DTT
       RORRE = ZLHS-ZRHS
       ERRORCUM = ERRORCUM + RORRE
+  
+  
+c Manu Extract the energy balance at the ground [snow level]
+       Energy_out(1,ictrl)=GBAL
+       Energy_out(2,ictrl)=RADT(2)
+       Energy_out(3,ictrl)=SHF
+           Energy_out(4,ictrl)=EGT
+           Energy_out(5,ictrl)=EGI
+           Energy_out(6,ictrl)=HG
+           Energy_out(7,ictrl)=EGS
+           Energy_out(8,ictrl)=ZLWU
+c Extract the throughfall precipitation  [with units = meters/hr]
+       Effective_PPT(1,ictrl)=p0 
+      
+   
+ 
 
 c      if (ictrl.eq.49) print *, 'after energy balance calcs'
 
@@ -510,10 +593,11 @@ c      if (ictrl.eq.49) print *, 'after energy balance calcs'
          egtw=egt/dtt
          egiw=egi/dtt
          egsw=egs/dtt
-         print *, nmm,ndd,nhh,swdown,radn(3,2),zlwup,
+ 
+           print *, ictrl,nmm,ndd,nhh,swdown,radn(3,2),zlwup,
      +               HFLUX,CHF,SHF,ectw,eciw,egtw,egiw,egsw,temprib,
      +               zlhs,zrhs
-         print *, 'ssib3: energy balance error. snowdepth=',snowdepth,
+           print *, 'ssib3: energy balance error. snowdepth=',snowdepth,
      &    'bwo=',bwo,'tssno=',tssno,'tgs=',tgs,'gdia=',gdia,'capac(2)=',
      &    capac(2),'flo=',flo,'pixel=',pixel,'replicate=',replicate,
      &    'rank=',rank,'y0=',y0,'obsnow=',obsnow,'egi_old=',x0(9),
@@ -522,7 +606,8 @@ c      if (ictrl.eq.49) print *, 'after energy balance calcs'
      &    'LWDOWN=',uarg(4,ictrl),'radt(1)=',radt(1),'radt(2)=',radt(2)
       
 
-       STOP
+         STOP
+
        END IF  
       END IF
 
@@ -563,13 +648,251 @@ cs  sun add above statement on 03/29/99
 c      if (ictrl.eq.49) print *, 'before output1 call...'
 
 
+
+!cl ======================= DONGYUE ADD ITERATION ======================
+!
+!cl ------------ initialization -----------------
+!! for 4 layer memls
+!        n_rlz4=1
+!        n_rz4=1
+!        n_yz4=n_y_ssib !should be 14...
+!        n_ypz4=1
+!        n_yrz4=14
+!        n_zz4=2 !number of observations
+!        n_zpz4=2
+!        n_zrz4=1
+!        n_cz4=9
+!        n_az4=8 !unused, actually...
+!        n_xz4=13
+!        n_uz4=9
+!  !allocate & define ctrl 
+!        allocate(ctrl4(n_cz4))
+!        ctrl4=0
+!        ctrl4(1)=0 !number of calculations to do, set in interfacez
+!        ctrl4(2)=0 !number of snow layers, set in interfacez
+!        ctrl4(3)=1 !atm_switch
+!        ctrl4(4)=0 !veg_switch, set in interfacez
+!  !these next numbers all pulled from old sizes.in file... careful!
+!        ctrl4(5)=5 !number of auxiliary inputs for snow rtm... need to check!
+!        ctrl4(6)=5 !number of snow inputs for snow rtm
+!        ctrl4(7)=5 !number of inputs for canopy rtm
+!        ctrl4(8)=4 !number inputs for atmospheric rtm
+!        ctrl4(9)=1 !number of passive microwave channels
+!  !allocate & set frequency and angle arrays
+!  !allocate(freq(ctrl(9)),theta(ctrl(9)))
+!        allocate(freq4(1),theta_m4(1))
+!        freq4(1)=37.
+!        theta_m4(1)=55.
+!        month_m4=12 !hard-code to december
+!  !note: just use local meas,rank as input to interfacez for debugging
+!        ierr4=0 !dummy   
+!        meas_switch4=1 !determines which measurements are used
+!        iveg_type4(1)=veg_map
+!        f_veg_m4(1,1)=0.
+!        albedo_m4(1,1)=0. !dummy variable; not used in interfacez
+!        n_bdrf4=1 !dummy variable to size bdrf dummy variable in interfacez
+!        bdrf4=0. !dummy variable; not used in interfacez
+!
+!
+!! for 3 layer memls
+!        n_rlz3=1
+!        n_rz3=1
+!        n_yz3=n_y_ssib !should be 14...
+!        n_ypz3=1
+!        n_yrz3=14
+!        n_zz3=2 !number of observations
+!        n_zpz3=2
+!        n_zrz3=1
+!        n_cz3=9
+!        n_az3=8 !unused, actually...
+!        n_xz3=13
+!        n_uz3=9
+!  !allocate & define ctrl 
+!        allocate(ctrl3(n_cz3))
+!        ctrl3=0
+!        ctrl3(1)=0 !number of calculations to do, set in interfacez
+!        ctrl3(2)=0 !number of snow layers, set in interfacez
+!        ctrl3(3)=1 !atm_switch
+!        ctrl3(4)=0 !veg_switch, set in interfacez
+!  !these next numbers all pulled from old sizes.in file... careful!
+!        ctrl3(5)=5 !number of auxiliary inputs for snow rtm... need to check!
+!        ctrl3(6)=5 !number of snow inputs for snow rtm
+!        ctrl3(7)=5 !number of inputs for canopy rtm
+!        ctrl3(8)=4 !number inputs for atmospheric rtm
+!        ctrl3(9)=1 !number of passive microwave channels
+!  !allocate & set frequency and angle arrays
+!  !allocate(freq(ctrl(9)),theta(ctrl(9)))
+!        allocate(freq3(1),theta_m3(1))
+!        freq3(1)=37.
+!        theta_m3(1)=55.
+!        month_m3=12 !hard-code to december
+!  !note: just use local meas,rank as input to interfacez for debugging
+!        ierr3=0 !dummy   
+!        meas_switch3=1 !determines which measurements are used
+!        iveg_type3(1)=veg_map
+!        f_veg_m3(1,1)=0.
+!        albedo_m3(1,1)=0. !dummy variable; not used in interfacez
+!        n_bdrf3=1 !dummy variable to size bdrf dummy variable in interfacez
+!        bdrf3=0. !dummy variable; not used in interfacez
+!cl ---------------- initialization done --------------------
+!! determine whether go into the iteration
+!      call ssib_layer(yout(1,ictrl-1),dz)
+!      IF((ictrl.ne.1).and.((3600*obsnow).gt.2).and.
+!     & ((yout(1,ictrl-1).ne.0.)))then
+!
+!!       4 layer memls       
+!        allocate(y4memls(21,1),xz4(13,1),uz4(9,1,1))
+!        y4memls=0.0
+!        tbs4=0.0
+!        xz4=0.0
+!        uz4=0.0
+!
+!        y4memls(1:3,1)=dz(1:3)
+!        y4memls(4,1)=3.6*obsnow
+!        y4memls(5:7,1)=yout(2:4,ictrl-1)
+!        y4memls(8,1)=yout(4,ictrl-1)
+!        y4memls(9:11,1)=yout(5:7,ictrl-1)
+!        y4memls(12,1)=yout(7,ictrl-1)
+!        y4memls(13:15,1)=yout(8:10,ictrl-1)
+!        y4memls(16,1)=yout(10,ictrl-1)
+!        y4memls(17:19,1)=yout(11:13,ictrl-1)
+!        y4memls(20,1)=yout(13,ictrl-1)
+!        y4memls(21,1)=yout(14,ictrl-1)
+!
+!        xz4(:,1)=xout(:,ictrl-1)
+!        uz4(:,1,1)=uarg(:,ictrl-1)
+!
+!! set water content to be 0
+!        y4memls(13:16,1)=0.0
+!
+!
+!! call interfacez4
+!        call interfacez4(y4memls,zz4,n_rlz4,n_rz4,n_yz4,n_ypz4,n_yrz4,
+!     & n_zz4,n_zpz4,n_zrz4,n_cz4,n_xz4,ctrl4,freq4,theta_m4,xz4,n_az4,
+!     & n_u,uz4,month_m4,tbraw4,albedo_m4,ictrl,rank,iveg_type4,ierr4,
+!     & f_veg_m4,bdrf4,n_bdrf4,meas_switch4,vcov_dat)
+!
+!        tbs4=tbs4+tbraw4(2,1)
+!
+!        !print*,'4 LAYER TB IS=====', TBS4
+!        deallocate(y4memls,xz4,uz4)
+!
+!!       4 layer memls done 
+!
+!!       =========== begin run 3 layer memls ============       
+!        allocate(y3memls(14,1),xz3(13,1),uz3(9,1,1))
+!        y3memls=0.0
+!        xz3=0.0
+!        uz3=0.0
+!        tbs3=0.0
+!       
+!
+!        if(isnow.eq.0)then
+!          y3memls(1,1)=sum(dzo)
+!          y3memls(2,1)=bwo(1)
+!          y3memls(3,1)=bwo(2)
+!          y3memls(4,1)=bwo(3)
+!          y3memls(5,1)=tssno(1)
+!          y3memls(6,1)=tssno(2)
+!          y3memls(7,1)=tssno(3)
+!          y3memls(8,1)= flo(1)*bwo(1)/1000
+!          y3memls(9,1)= flo(2)*bwo(2)/1000
+!          y3memls(10,1)=flo(3)*bwo(3)/1000
+!          y3memls(11,1)=gdia(1)
+!          y3memls(12,1)=gdia(2)
+!          y3memls(13,1)=gdia(3)
+!          y3memls(14,1)=TGS
+!        elseif(snowdepth.gt.0)then
+!          y3memls(1,1)=snowdepth
+!          y3memls(2,1)=capac(2)*1000/snowdepth
+!          y3memls(3,1)=capac(2)*1000/snowdepth
+!          y3memls(4,1)=capac(2)*1000/snowdepth
+!          y3memls(5,1)=TGS
+!          y3memls(6,1)=TGS
+!          y3memls(7,1)=TGS
+!          y3memls(8,1)=0.
+!          y3memls(9,1)=0.
+!          y3memls(10,1)=0.
+!          y3memls(11,1)=gsize
+!          y3memls(12,1)=gsize
+!          y3memls(13,1)=gsize
+!          y3memls(14,1)=TGS
+!        else
+!          y3memls(1:14,1)=0.0
+!          y3memls(14,1)=TGS
+!        endif
+!
+!! set water content to be 0
+!        y3memls(8:10,1)=0.0
+!
+!
+! 
+!        xz3(1 ,1)=TD
+!        xz3(2 ,1)=TC
+!        xz3(3 ,1)=TA
+!        xz3(4 ,1)=TM
+!        xz3(5 ,1)=www(1)
+!        xz3(6 ,1)=www(2)
+!        xz3(7 ,1)=www(3)
+!        xz3(8 ,1)=capac(1)
+!        xz3(9 ,1)=egi
+!        xz3(10,1)=gsize
+!        xz3(11,1)=snden
+!        xz3(12,1)=capac(2)
+!        xz3(13,1)=roff
+!
+!        uz3(:,1,1)=uarg(:,ictrl)
+!        
+!! call interfacez3
+!        call interfacez3(y3memls,zz3,n_rlz3,n_rz3,n_yz3,n_ypz3,n_yrz3,
+!     & n_zz3,n_zpz3,n_zrz3,n_cz3,n_xz3,ctrl3,freq3,theta_m3,xz3,n_az3,
+!     & n_u,uz3,month_m3,tbraw3,albedo_m3,ictrl,rank,iveg_type3,ierr3,
+!     & f_veg_m3,bdrf3,n_bdrf3,meas_switch3,vcov_dat)
+!
+!        tbs3=tbs3+tbraw3(2,1)
+!
+!        !print*,'3 LAYER TB IS=====', TBS3
+!        !print*, tbs3(1)-tbs4(1)
+!        !print*,'ICTRL is', ictrl        
+!        
+!! iteration begins
+!        counter=0
+!        do while((tbs3(1)-tbs4(1)).gt.(0.005))
+!          y3memls(11,1)=y3memls(11,1)+0.00001
+!          call interfacez3(y3memls,zz3,n_rlz3,n_rz3,n_yz3,n_ypz3,n_yrz3,
+!     & n_zz3,n_zpz3,n_zrz3,n_cz3,n_xz3,ctrl3,freq3,theta_m3,xz3,n_az3,
+!     & n_u,uz3,month_m3,tbraw3,albedo_m3,ictrl,rank,iveg_type3,ierr3,
+!     & f_veg_m3,bdrf3,n_bdrf3,meas_switch3,vcov_dat)
+!          tbs3=0.0
+!          tbs3=tbs3+tbraw3(2,1)
+!          counter=counter+1
+!        enddo
+!
+!        !print*,'itration times: ',counter
+!! iteration ends 
+!
+!        if(isnow.eq.0)then
+!          gdia(1)=y3memls(11,1)
+!        elseif(snowdepth.gt.0)then
+!          gsize=y3memls(11,1)
+!        endif
+!               
+!        !print*,'================================'
+!        
+!        deallocate(y3memls,xz3,uz3)
+!
+!       ENDIF
+!
+!       deallocate(freq4,theta_m4,ctrl4,freq3,theta_m3,ctrl3)
+!
+!cl ======================= ITERATION DONE ==========================
+
       call output1(sunang,siblh,isnow,iday,n_steps,yout,n_y,xout,n_x,
      &  zout,tend,pixel)
 
 c      if (ictrl.eq.49) print *, 'after output1 call...'
 
       END DO
-    
       return
       end                                                               
 cm **************************************************************
@@ -1202,7 +1525,7 @@ C---------------------------------------------------------------------- RAD03890
 C                                                                       RAD03910
 102   CONTINUE                           
 C---------------------------------------------------------------------- RAD03930
-C     DOWNWARD LONG-WAVE FROM BRUNT'S EQUATION, MONTEITH(1973), P37.    RAD03940
+C     DOWNWARD LONG-WAVE FROM BRUNTS EQUATION, MONTEITH(1973), P37.    RAD03940
 C---------------------------------------------------------------------- RAD03950
       ESKY = 0.53 + 0.06*SQRT(EM)       
       RADN(3,2)  =  ESKY*(1.+0.2*(CLOUD*CLOUD))*STEFAN*TM**4   
@@ -1272,7 +1595,7 @@ CM  Mike modified this on June 12, 2006 so that if the objective value Y
 CM   is identical in two successive iterations (if Y==Y1(L) ), we will use
 CM   the derivative from the previous iteration.  The assumption is, if
 CM   the objective value from the previous iteration is identical, the 
-CM   derivative from that iteration won't be off by too much.
+CM   derivative from that iteration wont be off by too much.
 
        DIMENSION   IWALK(3), NEX(3)                                     
        COMMON/TONNEW/  ZINC(3), A2(3), Y1(3)                            
@@ -1308,17 +1631,17 @@ CM     Mike is adding this if statement to augment the original line of
 CM       code, in order to handle the case where Y==Y1(L).  In that case,
 CM       we will use the derivative from the previous iteration, then 
 CM       continue as normal.
-         print*, 'Warning in SSiB/Newton: Objective value for this',
-     &     'iteration identical to that of previous iteration. Using',
-     &     'derivative from previous iteration instead of',
-     &     ' recalculating; prev_dyda=',prev_dyda
+c         print*, 'Warning in SSiB/Newton: Objective value for this',
+c     &     'iteration identical to that of previous iteration. Using',
+c     &     'derivative from previous iteration instead of',
+c     &     ' recalculating; prev_dyda=',prev_dyda
          a=a1-y/prev_dyda
-         print *, 'Done with new calculation'
+c         print *, 'Done with new calculation'
        else
          A=A1-Y*(A1-A2(L))/(Y-Y1(L))                                   
        end if
        IF(ABS(A-A1).GT.(10.0*FINC))                                    
-     &            A=A1+10.0*FINC*SIGN(CONS,(A-A1))                      
+     &     A=A1+10.0*FINC*SIGN(CONS,(A-A1))                      
 CM     Mike is adding this line to save the derivative at this iteration
        prev_dyda=(y-y1(l))/(a1-a2(l))
 
@@ -1378,7 +1701,9 @@ C
        RETURN                                                           
        END                                                              
 C ===================================================================    RAD000
-      SUBROUTINE RADAB (ISNOW,MDLSNO,afac,ictrl,ipixel) 
+       SUBROUTINE RADAB(ISNOW,MDLSNO,afac,ictrl,ipixel,swenew,sweold,
+     &        sag1,sag2)
+	  
 C                                                         1 AUGUST 1988 RAD00040
 C=======================================================================RAD00050
 C                                                                       RAD00060
@@ -1388,12 +1713,15 @@ C                                                                       RAD00090
 C-----------------------------------------------------------------------RAD00100
 c     DIMENSION XQQ(2,2,2)                                              RAD00110
       include 'comsib.in'                                          
-      include 'snow4.in'                                          
-
+      include 'snow4.in'
+!      real sag1, sag2
 C                                                                       RAD00140
       DIMENSION TRANC1(2), TRANC2(2), TRANC3(2)                  
 C                                                                       RAD00160
-      F = SUNANG                                                
+      F = SUNANG
+      if (ictrl.eq.1) then
+       sag1=0.0
+      end if
 C                                                                       RAD00180
 C---------------------------------------------------------------------- RAD00190
 C     CALCULATION OF MAXIMUM WATER STORAGE VALUES.                      RAD00200
@@ -1475,7 +1803,7 @@ C                                                                       RAD00850
 C                                                                       RAD00870
 C---------------------------------------------------------------------- RAD00880
 C                                                                       RAD00890
-C     DICKINSON'S VALUES                                                RAD00900
+C     DICKINSONS VALUES                                                RAD00900
 C                                                                       RAD00910
       BE = 1. - SCAT + UPSCAT                                     
       CE = UPSCAT                                                   
@@ -1623,7 +1951,18 @@ C                                                                       RAD01980
 cm    here is the call to compute the albedo over the snow surface
 cm
       if(ISNOW==0.and.IVEG==2)then
-        call sntalb(gdia(3),SUNANG,ALBEDO,salbo,IWAVE,afac)
+      
+      ! Manu [Oct2010] changes the snow albedo calculation, I think the best one is the CLM
+      ! parameterization but still need to perform further albedo assesments
+        
+c COMMENT/UNCOMMENT THE FOLLOWING FOR SNTHERM:
+        ! call sntalb(gdia(3),SUNANG,ALBEDO,salbo,IWAVE,afac)
+        
+c COMMENT/UNCOMMENT THE FOLLOWING FOR CLM:
+        ! call snowage(3600.0,tgs,swenew*1000.0,sweold*1000.0,sag1,sag2)		 
+        !  call albsnowCLM(sunang,sag2,ALBEDO(2,1:2,1:2))
+         sag1 = sag2
+
       end if
 
 c      if (ictrl.eq.49) print *, 'radab: after call to sntherm...',
@@ -1694,7 +2033,7 @@ C                                                                       RAD02560
 1000  CONTINUE                                                    
 
 CM THESE LINES (FROM HERE TO THE 730 MARK) ARE AN ALBEDO ADJUSTMENT THAT IS
-CM NOW OBSELETE, THOUGH IT DIDN'T APPEAR TO BE IN AFFECT WHEN I RECEIVED
+CM NOW OBSELETE, THOUGH IT DIDNT APPEAR TO BE IN AFFECT WHEN I RECEIVED
 CM THE CODE.
 c
 c     albedo adjustment ==============================================
@@ -2014,7 +2353,7 @@ C
       ELSE                                                              
          U2 = UM - 1. / VKC * USTARN * G2 * XCTU2                      
       END IF                                                            
-cm    this line added based on ratko's suggestion, 5/30/06
+cm    this line added based on ratkos suggestion, 5/30/06
       U2=AMAX1(U2,0.01)
 
 C                                                                       
@@ -2386,7 +2725,7 @@ C
 C                                                                       
 1000  CONTINUE                                                          
 CS Sun changes  following statatement which is alwayes functioned 
-CS    in Xue's code            10/13/98 
+CS    in Xues code            10/13/98 
       IF (ISNOW.ne.0.or.MDLSNO.ne.0) THEN           
          FLUXEF = SHF - CCT*DTG/DTT                    
          TD = TD + FLUXEF / ( CG * 2. * SQRT ( PIE*365. ) ) * DTT 
@@ -2729,7 +3068,8 @@ C
       EGPOT = ( (ETGS - EA) + (GETGS - DEADTG)*DTG - DEADTC*DTC )       
       EGI = EGPOT * VCOVER(2) * WG/RD * RCP/PSY * DTT                   
       EGIDIF=AMAX1(0.0,(EGI-CAPAC(2)*1.E3*HLAT))                        
-      EGI   =AMIN1(EGI,(    CAPAC(2)*1.E3*HLAT))                        
+      EGI   =AMIN1(EGI,(    CAPAC(2)*1.E3*HLAT))
+	  													  						                          
 C                                                                       
 C---------------------------------------------------------------------- 
 C                                                                       
@@ -2972,14 +3312,19 @@ C
       RESRDC = RDC                                                      
       RESRBC = RBC                                                      
       RESV2 = VCOVER(2)                                                 
-C                                                                       
+C                        
+
+
+                                               
       IF ( TGS .GT. TF ) GO TO 100                                      
 CS Sun Change following statement into another one: SDEP=snowdepth  10/13/98  
       IF (MDLSNO.eq.0.and.ISNOW.eq.0) THEN    
          SDEP=snowdepth
       ELSE 
-          SDEP = CAPAC(2) *snden
+         SDEP = CAPAC(2) *snden
       END IF
+	  
+	    
 CS                                    10/13/98 
       SDEP = AMIN1( SDEP, (Z2*0.95) )                                   
       D = Z2 - ( Z2-D ) / Z2 * ( Z2 - SDEP )                            
@@ -3131,10 +3476,17 @@ ccccc Next calculate snow layers temperatures and densities
         IF (ISNOW.ne.0) go to 2000    
          If((sso(ik).lt.1d0.and.porosity(ik).gt.0d0))then
             udum0 = dzo(ik)*(porosity(ik) -work1(ik))
+			
+	
+			
             if(udum0.lt.0.0)then
               print *, ' udum0 is WRONG in thermal.f,obsnow=',obsnow
               Stop
             end if
+			
+			
+		
+			
             if(wf(ik+1).gt.udum0)then
                uuu=udum0
                snroff = snroff + (wf(ik+1)-udum0)
@@ -3146,17 +3498,31 @@ c       write (100,*)'O udum0 wf(ik+1) snroff',udum0,wf(ik+1),snroff
             dhp(ik+1)=(uuu*cl*rhowater*(tssn(ik+1)-273.16))/dtt
             w(ik)=wo(ik)+ uuu
 
+
+
             bwo(ik)=rhowater*w(ik)/dzo(ik)
             cto(ik)=(bwo(ik)/920.0)*1.9e+6
             dmlto(ik)=w(ik)*dlm*rhowater
             if (ho(ik).lt.-dmlto(ik)) then
+			
+
+			
                fio(ik)=1.0
                flo(ik)=0.0 
                tssno(ik)=( ho(ik)+dmlto(ik))/(cto(ik)*dzo(ik))+273.16
+	
+	   		   
+c	  print*,'ho(',ik,')',ho(ik),'dmlto',dmlto(ik),ictrl,tssno(ik)
+	  
+				   			   
             else 
                tssno(ik)=273.16
                fio(ik)=-ho(ik)/dmlto(ik) 
                flo(ik)=1.0-fio(ik)
+			   
+			   
+c	  print*,'ho(',ik,')',ho(ik),'dmlto',dmlto(ik),ictrl,tssno(ik)
+			   
             end if 
             blo(ik)=bwo(ik)*flo(ik)
             bio(ik)=bwo(ik)*fio(ik) 
@@ -3169,6 +3535,7 @@ c           write (100,*)'H wf(ik+1) snroff',wf(ik+1),snroff
       hroff=hroff+wf(ik+1)*cl*rhowater*(tssn(ik+1)-273.16)
             dhp(ik+1) = 0.0
          End if
+
 
 cs  Sun add. It is important because tssno(n) is changed here on 1/25/99 .
          TGS=tssno(NK)
@@ -3212,6 +3579,8 @@ c
 CS     Sun add  above paragraph        on 10/13/98            
 2000  CONTINUE      
 
+
+
 C                                                                       
       CALL RASIT5(TRIB,CTNI,CUNI,FTT,FVV,rank,pixel,replicate,ictrl,ii)
 C                                                                       
@@ -3230,6 +3599,7 @@ C        G - GROUND
 C                                                                       
 C---------------------------------------------------------------------- 
 C                                                                       
+
 
       CCODTC = CCX / DTT - RNCDTC + HCDTC + ECDTC                       
       CCODTG = - RNCDTG + HCDTG + ECDTG                                 
@@ -3260,6 +3630,7 @@ C
 
       DTC = ( CCORHS * GCODTG - CCODTG * GCORHS ) / DENOM               
       DTG = ( CCODTC * GCORHS - CCORHS * GCODTC ) / DENOM 
+	  
 
 CS  Sun add following part here for inserting snow routing on 10/13/98 
       IF (MDLSNO.eq.0.and.ISNOW.eq.0) THEN 
@@ -3292,6 +3663,8 @@ cs Sun debug on 1998/12/14  end
           end if
         End if
       END IF
+      
+
 
 C---------------------------------------------------------------------- 
 C     CHECK IF INTERCEPTION LOSS TERM HAS EXCEEDED CANOPY STORAGE       
@@ -3302,11 +3675,14 @@ C
       ECIDIF=AMAX1(0.0,(ECI-CAPAC(1)*1.E3*HLAT))                        
       ECI   =AMIN1(ECI,(    CAPAC(1)*1.E3*HLAT))                        
 C                                                                       
-      EGPOT = ( (ETGS - EA) + (GETGS - DEADTG)*DTG - DEADTC*DTC )       
+      EGPOT = ( (ETGS - EA) + (GETGS - DEADTG)*DTG - DEADTC*DTC )  
+	  					        
       EGI = EGPOT * VCOVER(2) * WG/RD * RCP/PSY * DTT
 
       EGIDIF=AMAX1(0.0,(EGI-CAPAC(2)*1.E3*HLAT))                        
       EGI   =AMIN1(EGI,(    CAPAC(2)*1.E3*HLAT))
+
+	  
 
 cm    i think sometimes too much snow evaporates
 cm    add a check to make sure less snow evaporates than top layer
@@ -3325,10 +3701,15 @@ C
       II = II + 1                                                       
       HT   = HEND                                                       
       IF ( II .GT. ITRUNK ) GO TO 200                                  
-C                                                                       
+C     
+
+                                                                  
       CALL NEWTON(TRIB,Y,FINC,NOX,NONPOS,IWALK,LX)                      
       IF(NOX.NE.1)GO TO 2000
 200   CONTINUE
+
+
+
 
 CS  Sun add following part here for inserting snow routing on 10/13/98 
 3000  IF (MDLSNO.eq.0.and.ISNOW.eq.0) THEN 
@@ -3336,7 +3717,8 @@ CS  Sun add following part here for inserting snow routing on 10/13/98
             tssn(NK)=TGS+DTG
          END IF  
          If (ik.eq.NK) then 
-c           egidw= EGI/HLAT/1000.
+
+
             SNOFAC = HLAT / (HLAT + SNOMEL /1000.) 
             egidw =  EGI*SNOFAC /HLAT/1000.
             w(n)=w(n)-egidw
@@ -3346,18 +3728,28 @@ c           egidw= EGI/HLAT/1000.
 cs sun: following way to correct h(n) may lead to unballance of energy.
             ho(n)=ho(n)*dzo(n)/dzold
             capac(2)=swe 
-         End if  
+			
+			
+			
+         End if 
+		 
+   
 
       CALL snresult(ik,ICASE,qsoil,wfsoil,tsoil,
      *    b1,b2,fff,delth,ictrl,pixel,y0,n_y,replicate,rank)
 
       END IF
- 57   continue      
+ 57   continue  
+ 
+		 
+		     
      
 CS sun add following parts on 12/5/98   start 
 clwp  11/17/2000, Li add following sentence to recalculate the snowdepth
 c      SNOWDEPTH=DZO(1)+DZO(2)+DZO(3)
       IF (MDLSNO.eq.0.and.ISNOW.eq.0) THEN 
+
+			
         swe=w(1)+w(2)+w(3)
         capac(2)=swe
         if((dz(1)+dz(2)+dz(3)).ne.0.0) then
@@ -3365,7 +3757,14 @@ c      SNOWDEPTH=DZO(1)+DZO(2)+DZO(3)
      *               /(dz(1)+dz(2)+dz(3))
         snden=1000./snden
         endif
+			
+c		endif
+		
+	
+		
       ENDIF
+	  
+		  
 
 CS sun add above  parts on 12/5/98  end 
 C     IQIN = IQIN + I                                                   
@@ -3506,11 +3905,8 @@ CS   Sun add next paragrapg to get soil surface temperature TGS  10/13/98
      &       (1.+btmp*DTT*(1.-ctmp*DTT/(1.+ctmp*DTT)))
          TD=(ctmp*DTT*TGS+TD)/(1.+ctmp*DTT)  
 
-
-cm   October 1 2014: force ground temperature to freezing
-c      if(tgs.lt.273.16)then   
-c         tgs=273.16
-c      endif
+cm  trying to fix weird yampa valley pixel ... mike 14 nov 2014
+cm         tgs=273.16
 
       END IF
       RETURN                                                            
@@ -4003,6 +4399,7 @@ cm   fraction that is assigned to the upper storey VCOVER variable instead
 cm   of the default values from the SSiB input file. - Mike, Aug 2006 
 
 cm      real data_in(12,12)
+        real LAIlocal 
 C
 cm      READ(2,*)
 cm      READ(2,*) (ZLT(IV), IV=1,2),(GREEN(IV), IV=1,2),Z2,Z1
@@ -4025,6 +4422,16 @@ c      RDC=data_in(mymonth,12)
 
 c     multiply leaf area index values by f_veg
       ZLT(1)=min(ZLT0(IVEG_TYPE,mymonth,1)*exp(f_veg(1,1)),8.25)
+
+c Manu FEbruary 2011 change this to be ZLT=ZLT*VCOVER because it seems that ZLT
+c                    is considered to be the area averaged LAI
+c leave this commented for now, and read in original ssib vegin files...
+c see Veg analysis on my blog for more details...
+      !print*,'readZLT',ZLT0(IVEG_TYPE,mymonth,1) 
+      !ZLT(1)=min(ZLT0(IVEG_TYPE,mymonth,1)*exp(f_veg(1,1))
+      !&           VCOVER(1)
+  
+      
       ZLT(2)=min(ZLT0(IVEG_TYPE,mymonth,2)*exp(f_veg(1,1)),8.25)
       GREEN(1)=GREEN0(IVEG_TYPE,mymonth,1)
       GREEN(2)=GREEN0(IVEG_TYPE,mymonth,2)
@@ -4064,7 +4471,7 @@ c       ssisnow  = 0.04
 c***********************************************************************
 c GETMET reads in met data from file, and generates required met
 c parameters (OLD)
-cm  now it doesn't read anything, it performs a few basic snow calculations
+cm  now it doesn not read anything, it performs a few basic snow calculations
 c***********************************************************************
       subroutine getmet(iptype,UM,nmm,ndd,nhh,ictrl,pixel)
       include 'snow4.in'
@@ -4078,26 +4485,41 @@ cm        iptype == 2 corresponds to snowfall
           prcpw=0.0
 cm        compute bifall and dfall
           if(tkair.gt.258.16)then
-            Ab=1.4*(278.15-tkair)**-1.15+0.008*UM**1.7
-            bifall=500*(1.-0.951*exp(-Ab))
+          Ab=1.4*(278.15-tkair)**(-1.15)+0.008*UM**1.7
+          bifall=500*(1.-0.951*exp(-Ab))
           else
-            Ab=0.008*UM**1.7
-            bifall=500.*(1-0.904*exp(-Ab))
+          Ab=0.008*UM**1.7
+          bifall=500.*(1-0.904*exp(-Ab))
           end if
 cm TEST//
 cm          bifall=100.
 cm // TEST
 
 cm        new snow grain diameter
+
+
+        IF((ictrl.gt.849).and.(ictrl.lt.969))then
+      
           if(bifall.gt.1000.)then
             ddfall=0.0
           elseif(bifall.gt.400.)then
-cm            ddfall=2.976E-3
+            ddfall=1.0*(sg3+1.1E-13*400**sg4)
+          else
+            ddfall=1.0*(sg3+1.1E-13*bifall**sg4)
+          end if
+
+        ELSE       
+
+          if(bifall.gt.1000.)then
+            ddfall=0.0
+          elseif(bifall.gt.400.)then
             ddfall=sg3+1.1E-13*400**sg4
           else
-cm            ddfall=1.6E-4+1.1E-13*bifall**4
             ddfall=sg3+1.1E-13*bifall**sg4
           end if
+     
+        ENDIF
+
         else if(iptype.eq.1)then
 cm        rainfall       
           prcpw=prcp
@@ -4135,7 +4557,7 @@ cm     the 'swtch' variable is set to 0 for initializing and 1 for
 cm     transitioning past the critical depth
 c  **************************************************************************
        subroutine layern (tg,swtch,im,id,ih)
-cm     swtch variable added by mike oct '03
+cm     swtch variable added by mike oct 03
        integer swtch
        include 'snow4.in'
        include 'comsib.in'
@@ -4657,11 +5079,12 @@ c**********************************************************************
 
 cm    compute new grain diameters
       if(ISNOW>0)then
-cm      update one-layer model grain diameter, GSIZE, then return
+cm    update one-layer model grain diameter, GSIZE, then return
         
 cm       if (ictrl.eq.3252) print *, 'before gsize update...'
         gsize=(ddfall*dzfall*bifall+gsize*swe*rhowater)/
      &        (dzfall*bifall+swe*rhowater)
+C        write(*,*) 'no combd called'
 
 cm       if (ictrl.eq.3252) print *, 'after gsize update...'
 
@@ -4700,8 +5123,11 @@ ccccc when snow temperature is below 273.16
       end if
 cm    add call to modnodnew, which re-layeres snowpack
       if (ISNOW==0) then
-
+        
+c       if (ictrl.le.5469) then
         call modnodenew
+c       endif
+
       endif
       return
       end
@@ -4812,13 +5238,13 @@ CS
                h(i) = ho(i) + (b1+b2*tssn(i))*dtt
              end if
              if(tssn(i).gt.273.16) then
-               print *, 'tssn(i)>273.16, delta=',tssn(i)-273.16
+c               print *, 'tssn(i)>273.16, delta=',tssn(i)-273.16
                if(tssn(i).gt.273.16+5E-5)then
-               print *, 'y0=',y0,'tssn=',tssn(1:3),'b1=',b1,'b2=',b2,
-     &           'i=',i,'ct(i)=',ct(i),'ho(i)=',ho(i),'dz(i)=',dz(i),
-     &           'w(i)=',w(i),'fi(n)=',fi(n),'itctrl=',ictrl,
-     &           'replicate=',replicate,'pixel=',pixel,'rank=',rank,
-     &           'obsnow=',obsnow
+c               print *, 'y0=',y0,'tssn=',tssn(1:3),'b1=',b1,'b2=',b2,
+c     &           'i=',i,'ct(i)=',ct(i),'ho(i)=',ho(i),'dz(i)=',dz(i),
+c     &           'w(i)=',w(i),'fi(n)=',fi(n),'itctrl=',ictrl,
+c     &           'replicate=',replicate,'pixel=',pixel,'rank=',rank,
+c     &           'obsnow=',obsnow
                Stop' Snow Temp. Wrong in thermal.f'
                end if
              end if
@@ -4909,7 +5335,7 @@ c           else if(fff.le.0.0) then
 cccccc next calculate ponding condition.
             fl(i) = 1.0
             fi(i) = 0.0
-c	    dz(i) = w(i)
+c           dz(i) = w(i)
             wf(i) = w(i)
             dum=  wf(i)
             dz(i) = 10e-15
@@ -5054,6 +5480,7 @@ cm      the output runoff is a new addition...
         xout(13,iday)=roff
 
 c record albedo
+
         if(sibswup.eq.-9999.)then
           zout(iday)=-9999.
         else
@@ -5263,14 +5690,17 @@ c     to get the expected change of middle layer of snow
       End
 
 c*******************************************************************
-c     COMBD computes new grain diameters for the each layer after 
+c     COMBD computes new grain diameters for each layer after 
 c        depth update
 c        by Mike, 3/16/04
 c*******************************************************************
       subroutine COMBD
       include 'snow4.in'
       include 'comsib.in'
-      real gdiao(3)
+      real gdiao(3),gdia_uc(1),gdia_c(1),gdia_uco(1),gdia_co(1)
+      real ext_dep_zn1,ext_dep_zn2,ext_dep_zn3,ext_dep_z11,
+     &      ext_dep_z21,ext_dep_z31,ext_dep_z12,ext_dep_z22,ext_dep_z32,
+     &      ext_dep_z13,ext_dep_z23,ext_dep_z33
       znew=dzfall+dzo(3)+dzo(2)+dzo(1)
 c     determine snow depths after udpate     
       IF (znew.le.0.06) THEN
@@ -5366,16 +5796,43 @@ c     2. compute new grain diameters
       gdiao(3)=gdia(3)
       gdiao(2)=gdia(2)
       gdiao(1)=gdia(1)
-     
-      gdia(3)=(bifall*zn3*ddfall+bio(3)*z33*gdiao(3)+
-     &         bio(2)*z23*gdiao(2))/(bifall*zn3+bio(3)*z33+bio(2)*z23)
-      gdia(2)=(bifall*zn2*ddfall+bio(3)*z32*gdiao(3)+bio(2)*z22*gdiao(2)
-     &         +bio(1)*z12*gdiao(1))/(bifall*zn2+bio(3)*z32+bio(2)*z22
-     &         +bio(1)*z12)
-      gdia(1)=(bifall*zn1*ddfall+bio(3)*z31*gdiao(3)+bio(2)*z21*gdiao(2)
-     &         +bio(1)*z11*gdiao(1))/(bifall*zn1+bio(3)*z31+bio(2)*z21
-     &         +bio(1)*z11)
-      
+      gdia_uco(1)=gdia_uc(1)
+      gdia_co(1)=gdia_c(1)     
+
+
+c     compute extiction depths of each contributed layears,Dongyue, 11 apr,2012 
+      ext_dep_zn1=exp(-5*zn1/cos(55/180*3.1415926)) 
+      ext_dep_z11=exp(-5*z11/cos(55/180*3.1415926))
+      ext_dep_z21=exp(-5*z21/cos(55/180*3.1415926))
+      ext_dep_z31=exp(-5*z31/cos(55/180*3.1415926))
+      ext_dep_zn2=exp(-5*zn2/cos(55/180*3.1415926))
+      ext_dep_z12=exp(-5*z12/cos(55/180*3.1415926))
+      ext_dep_z22=exp(-5*z22/cos(55/180*3.1415926))
+      ext_dep_z32=exp(-5*z32/cos(55/180*3.1415926))
+      ext_dep_zn3=exp(-5*zn3/cos(55/180*3.1415926))
+      ext_dep_z23=exp(-5*z23/cos(55/180*3.1415926))
+      ext_dep_z33=exp(-5*z33/cos(55/180*3.1415926))
+
+      gdia(3)=((bifall*zn3*ddfall+bio(3)*z33*gdiao(3)+
+     &         bio(2)*z23*gdiao(2))/(bifall*zn3+bio(3)*z33
+     &          +bio(2)*z23))
+      gdia(2)=((bifall*zn2*ddfall+bio(3)*z32*gdiao(3)+bio(2)*z22
+     &           *gdiao(2)+bio(1)*z12*gdiao(1))/(bifall*zn2+bio(3)
+     &           *z32+bio(2)*z22+bio(1)*z12))    
+      gdia(1)=((bifall*zn1*ddfall+bio(3)*z31*gdiao(3)+bio(2)
+     &         *z21*gdiao(2)+bio(1)*z11*gdiao(1))/(bifall*zn1
+     &         +bio(3)*z31+bio(2)*z21+bio(1)*z11))
+
+        
+
+!cl    dongyue track bottom layer grain size change 16 June,12 
+!       IF (gdia(1).LT.gdiao(1)) THEN
+!          cpex=0.6123*(log(1+(rainf+obsnow)*8640)/log(3.6))
+!          if(cpex.gt.1.0)then
+!           cpex=1.
+!          endif
+!       ENDIF
+
       return
       end
 
@@ -5506,25 +5963,17 @@ c        These formulae are described in Marks and Dozier, 1992:
 c        Climate and Energy Exchange at the Snow Surface in the Alpine Region of 
 c        the Sierra Nevada 2. Snow Cover Energy Balance.  WRR 28(11): 3043-3054
 
-      Implicit None
-
-c      include 'comsib.in'
-c      include 'snow4.in'
-
-      real, dimension(2,3,2),intent(inout) :: ALBEDO
-      real, dimension(2,2),intent(in) ::  salbo
-      real :: Dn, cosz, albfac,tcosz,dum,sqrtr
-
-      integer,intent(in) :: iwave
+      dimension ALBEDO(2,3,2)
+      dimension salbo(2,2)      
 
 c     compute three values used in algorithm
       sqrtr=sqrt(0.50*Dn)
       dum=0.57735026918963
-      tcosz=max(cosz,0.0)
+    !  tcosz=max(cosz,0d0)
 
 c     save copies of original albedos
-c      salbo(IWAVE,1)=ALBEDO(2,IWAVE,1)
-c      salbo(IWAVE,2)=ALBEDO(2,IWAVE,2)     
+      salbo(IWAVE,1)=ALBEDO(2,IWAVE,1)
+      salbo(IWAVE,2)=ALBEDO(2,IWAVE,2)     
 
 c     compute visible or nir albedo, based on IWAVE
       select case (IWAVE)

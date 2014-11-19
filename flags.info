@@ -1,0 +1,16 @@
+Useful Switches:
+-C                  Generate code to check array bounds
+-M[no]bounds        Generate code to check array bounds
+-Mchkfpstk          Check consistency of floating point stack at subprogram calls (32-bit only)
+-Mchkptr            Check for NULL pointers
+-Mchkstk            Check for sufficient stack space upon subprogram entry
+-Mcoff              Generate COFF format object
+-Mdwarf1            Generate DWARF1 debug information with -g
+-Mdwarf2            Generate DWARF2 debug information with -g
+-Mdwarf3            Generate DWARF3 debug information with -g
+-Melf               Generate ELF format object
+-Mnodwarf           Do not add DWARF debug information
+-M[no]pgicoff       Generate additional symbolic information
+-g                  Generate information for debugger
+-gopt               Generate information for debugger without disabling optimizations
+-[no]traceback      Add debug information for runtime traceback

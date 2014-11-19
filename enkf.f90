@@ -66,9 +66,9 @@ INCLUDE 'mpif.h'
 INTEGER::RANK,NPROCS,STAT(MPI_STATUS_SIZE),IERR,N_RL
 DOUBLE PRECISION STARTTIME,ENDTIME
 ! 0.1.2) READ SIZES OF ARRAYS FROM FILE
-INTEGER::N_Y,N_YR,N_T,N_M,N_YP,N_YS,N_Z,N_ZR,N_R,N_U,N_A,N_X,N_C,I,N_PF
+INTEGER::N_Y,N_YR,N_T,N_M,N_YP,N_YS,N_Z,N_ZR,N_R,N_U,N_A,N_X,N_C,I,N_PF,N_RP,n_ypp
 INTEGER,DIMENSION(:),ALLOCATABLE::RTM_CTRL,N_ZP
-CHARACTER(32) :: N_ZRC!,step
+CHARACTER(32) :: N_ZRC,step
 ! 0.1.4) GET RUN PARAMETERS
 INTEGER :: MEAS_SWITCH,SPATIAL_PIC,ATM_SWITCH,GEN_SEEDS(5),ENS_NUM
 INTEGER,DIMENSION(:),ALLOCATABLE :: MEASTIMES,ISTART,IEND,ZUSE,MSTART,MEND
@@ -76,12 +76,13 @@ REAL :: PRECIP_SCALE,CVEG,LAM_VEG,DUMMY_INV_PRCP,RANGE_U,&
   RANGE_A,DUMMY_B_1,DUMMY_B_2!,F_RADT
  ! LAM_RADT,C_RADT,PSCALE,RANGE_B,RANGE_RADT,RANGE_CHI_P,C_CHI_P,&
  ! LAM_CHI_P 
-REAL,DIMENSION(:),ALLOCATABLE:: ALPHA_BAR, FREQ, THETA
-REAL,DIMENSION(:,:),ALLOCATABLE::CV,Y_IN,X_IN,TBRAW,LAM_U,LAM_ALPHA!,tb_output
+REAL,DIMENSION(:),ALLOCATABLE:: ALPHA_BAR, FREQ, THETA,tb_output
+real,dimension(:),allocatable:: tb_outputall !mike change to average 14 nov 14
+REAL,DIMENSION(:,:),ALLOCATABLE::CV,Y_IN,X_IN,TBRAW,LAM_U,LAM_ALPHA!
 REAL,DIMENSION(:,:,:),ALLOCATABLE::ALBEDO,CU,C_ALPHA
 LOGICAL :: GEN_SWITCH
 ! 0.1.5) READ FROM FILE
-INTEGER :: M,J,N_BDRF
+INTEGER :: M,J,N_BDRF,rp
 INTEGER,DIMENSION(:),ALLOCATABLE::VEG_MAP
 REAL,DIMENSION(:),ALLOCATABLE::ELEVATION,VCOVER
 REAL,DIMENSION(:,:),ALLOCATABLE::ZMEAS,ZS,ZF,BDRF
@@ -95,7 +96,7 @@ REAL,DIMENSION(:,:,:), ALLOCATABLE :: ALPHA,FALPHA
 INTEGER :: KGLOBAL
 ! 0.1.9) CREATE STATIC ENSEMBLE OF FORCING PERTURBATIONS
 INTEGER :: SEED
-INTEGER,DIMENSION(:),ALLOCATABLE :: MAP
+INTEGER,DIMENSION(:),ALLOCATABLE :: MAP,run_pix 
 REAL,DIMENSION(:,:,:),ALLOCATABLE :: F_U
 ! 0.1.10) CREATE STATIC ENSEMBLE OF VEGETATION PERTURBATIONS
 REAL,DIMENSION(:,:),ALLOCATABLE :: F_VEG ! MATCHES DIMENSION IN MVNRND
@@ -221,11 +222,17 @@ READ(1,10) RTM_CTRL(9)
 !NUMBER OF NLDAS FORCING PIXELS
 READ(1,*)
 READ(1,10) N_PF
+!NUMBER OF RUNNING PIXELS
+READ(1,*)
+READ(1,10) N_RP
 10 FORMAT(I5)
 CLOSE(1)
-N_Y=N_YR*N_YP  !COMPUTE TOTAL NUMBER OF STATES
+N_Y=N_YR*N_yp  !COMPUTE TOTAL NUMBER OF STATES
+n_ypp=n_yr*n_rp
 N_Z=SUM(N_ZP)  !COMPUTE TOTAL NUMBER OF MEASUREMENTS
-!write(step,'(I3)') n_m 
+write(step,'(I3)') n_m 
+!running for # of limited pixel,n_rp,    %  Oct.9 RK
+allocate(run_pix(n_rp))
 
 
 ! 1.3) CHECK TO BE SURE THAT N_R IS DIVISIBLE BY NPROCS, COMPUTE DIMENSION OF
@@ -470,8 +477,10 @@ X=X0_IN
 FIRST=0
 
 
+OPEN(FILE='tbraw_t.out',UNIT=9,STATUS='UNKNOWN')
+allocate(tb_output(n_zp(1)*n_yp))
+allocate(tb_outputall(n_zp(1)*n_yp)) !mike edit 14 nov 14 for ensemble average tb
 
-!allocate(tb_output(n_zp(1)*n_yp,n_m))
 !MEASUREMENT LOOP
 DO M=1,N_M+1
   IF(RANK.EQ.0) PRINT *,'BEGINNING MEASUREMENT INTERVAL ',M,'/',N_M+1
@@ -556,11 +565,25 @@ DO M=1,N_M+1
     END DO
    
     !2.4.3) PIXEL LOOP FOR INTEGRATING MODEL
+
+!   %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+
+!     run_pix=(/137/)
+
+
+!    do rp=1,n_rp
+
+!     P=run_pix(rp)
+
+
+!   %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
      DO P=1,N_YP!PIXEL LOOP
 
       !2.4.3.1) COMPUTE INDICES
       !COMPUTE YI and YF, INITIAL AND FINAL STATE INDECES AT THIS PIXEL
-      YI=N_YR*(P-1)+1
+      YI=N_YR*(P-1)+1  
       YF=N_YR*P
       XI=N_X*(P-1)+1
       XF=N_X*P
@@ -694,17 +717,30 @@ DO M=1,N_M+1
     MONTH=12
     ALBEDO_IN=ALBEDO(N_S,1:N_YP,1:N_RL)
 
-
-
-    CALL INTERFACEZ(Y,Z,N_RL,N_R,N_Y,N_YP,N_YR,N_Z,N_ZP,N_ZR,N_C,N_X,RTM_CTRL,&
+    CALL INTERFACEZ(Y,Z,N_RL,N_R,N_Y,N_yP,N_YR,N_Z,N_ZP,N_ZR,N_C,N_X,RTM_CTRL,&
       FREQ,THETA,X,N_A,N_U,U_RTM,MONTH,TBRAW,ALBEDO_IN,M,RANK,VEG_MAP,IERR,&
       F_VEG,BDRF,N_BDRF,MEAS_SWITCH,VCOVER)
 
-OPEN(FILE='tbraw.out',UNIT=9,STATUS='UNKNOWN')
-write(9,*) tbraw
-deallocate(tbraw)
+! mike changing this to omit the n_rl, and to allow for sum over whole ensemble
+!    14 nov 14
+    do i=1,n_zp(1)*n_yp
+     tb_output(i)=sum(tbraw(i,:))
+    end do
 
-!    CALL MPE_LOG_EVENT(12,M,'END MEAS CALC.')
+!  mike trying to set up average tb over ensemble 14 nov 14
+    call mpi_reduce(tb_output,tb_outputall,n_zp(1)*n_yp,mpi_real,mpi_sum,&
+      0,mpi_comm_world,ierr)
+
+!  mike changing to allow output only from the head node 14 nov 14
+    if(rank.eq.0)then
+      write(9,'(12(F10.4))') tb_outputall/n_r
+    end if
+
+    OPEN(FILE='tbraw.out',UNIT=19,STATUS='UNKNOWN')
+    write(19,*) tbraw
+!   CALL MPE_LOG_EVENT(12,M,'END MEAS CALC.')
+    deallocate(tbraw)
+
 
 !    !2.7.2) SAVE PRIOR STATES
 !    YPRIOR=Y
@@ -800,8 +836,7 @@ IF(RANK.EQ.0)THEN
   OPEN(FILE='ytime.out',UNIT=10,STATUS='UNKNOWN')
   OPEN(FILE='ytime_all.out',UNIT=11,STATUS='UNKNOWN')
   OPEN(FILE='innov_stats.out',UNIT=12,STATUS='UNKNOWN')
-!  OPEN(FILE='tbraw.out',UNIT=16,STATUS='UNKNOWN')
-!  OPEN(FILE='avtbraw.out',UNIT=17,STATUS='UNKNOWN')
+!  OPEN(FILE='tbraw_t.out',UNIT=14,STATUS='UNKNOWN')
  
  !4.3 LOOP OVER DATA, WRITING OUTPUT CORRESPONDING TO TOUTPUT
   DO T=1,N_M+N_T+1
@@ -841,29 +876,14 @@ IF(RANK.EQ.0)THEN
   CLOSE(12)!CLOSE INNOVATIONS FILE
   CLOSE(13)!CLOSE YSTATISTICS FILE
 END IF
-!do i=1,n_zp(1)*n_yp
-!   write(9,*) (z(j,i),j=1,n_z)
-!   write(14,'(F10.3,1X,F10.3,1X,F10.3,1X,F10.3)')  (tbraw(i,j),j=1,n_rl)
-!end do
-!    write(14,*) tb_output
-!    write(9,*) tbraw 
+
 !  do i=1,n_zp(1)*n_yp
 !    write(14,('//trim(step)//F15.7')) (tb_output(i,j),j=1,n_m)
 !  end do
 
-!write(16,*) tbraw
-
-!    do i=1,n_zp(1)*n_yp
-!     tb_output(i,m)=sum(tbraw(i,:))/n_rl
-!    end do
-
-
 CLOSE(15) !FILE FOR MEASUREMENT INNOVATIONS
-!close(14)
-!close(9)
-!close(16)
-!close(17)
-
+close(14)
+deallocate(run_pix)
 
 !CALL MPE_FINISH_LOG('enkf_mpe')
 CALL MPI_FINALIZE(IERR)
