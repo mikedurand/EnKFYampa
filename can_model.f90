@@ -31,6 +31,12 @@ do i=1,ctrl(9)
   call can_tran(freq(i),theta(i),eps_veg,vegin(4),vegin(5),t_can(1,i),&
     t_can(2,i))
 
+  !temporary: set all transmissivities to 0.6 a la langlois et al. 2011
+  !note this is only applicable for 37 GHz, which is what rhaesung is
+  !simulating right now. november 2014. by mtd
+  t_can(1,i)=0.6
+  t_can(2,i)=0.6
+
   !compute canopy brightness temperature from emissivity (1-transmissivity),
   !  and the vegetation physical temperature
   tb_can(1,i)=(1-t_can(1,i))*vegin(2)

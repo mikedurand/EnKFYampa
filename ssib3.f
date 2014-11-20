@@ -208,10 +208,10 @@ cm    extract forcing data from uarg array
       afac=1.0
 
 
-cl    dongyue constrain the soil temp
+cl    dongyue constrain the soil tempc
       if(tgs.lt.273.16)then
           tgs=273.16
-      endif
+      end if
 
 c     if(ictrl.eq.icrash) print *, 'U=',uarg(1:9,ictrl)
 
@@ -3904,6 +3904,10 @@ CS   Sun add next paragrapg to get soil surface temperature TGS  10/13/98
          TGS=(tsoil+atmp*DTT+btmp*DTT*TD/(1.+ctmp*DTT))/
      &       (1.+btmp*DTT*(1.-ctmp*DTT/(1.+ctmp*DTT)))
          TD=(ctmp*DTT*TGS+TD)/(1.+ctmp*DTT)  
+
+cm  trying to fix weird yampa valley pixel ... mike 14 nov 2014
+cm         tgs=273.16
+
       END IF
       RETURN                                                            
       END
