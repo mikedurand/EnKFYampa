@@ -702,14 +702,15 @@ DO M=1,N_M+1
     MONTH=12
     ALBEDO_IN=ALBEDO(N_S,1:N_YP,1:N_RL)
 
-    CALL INTERFACEZ(Y,Z,N_RL,N_R,N_Y,N_yP,N_YR,N_Z,N_ZP,N_ZR,N_C,N_X,RTM_CTRL,&
+    CALL INTERFACEZ(Y,Z,N_RL,N_R,N_Y,N_YP,N_YR,N_Z,N_ZP,N_ZR,N_C,N_X,RTM_CTRL,&
       FREQ,THETA,X,N_A,N_U,U_RTM,MONTH,TBRAW,ALBEDO_IN,M,RANK,VEG_MAP,IERR,&
       F_VEG,BDRF,N_BDRF,MEAS_SWITCH,VCOVER)
 
 ! mike changing this to omit the n_rl, and to allow for sum over whole ensemble
-!    14 nov 14
+!    14 nov 14. note n_zp(1)=12
     do i=1,n_zp(1)*n_yp
-     tb_output(i)=sum(tbraw(i,:))
+!     tb_output(i)=sum(tbraw(i,:))
+     tb_output(i)=sum(z(i,:)) !identical to prev. line for 1 pix (20 nov 14, md)
     end do
 
 !  mike trying to set up average tb over ensemble 14 nov 14
