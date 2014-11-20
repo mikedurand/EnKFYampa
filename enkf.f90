@@ -76,8 +76,7 @@ REAL :: PRECIP_SCALE,CVEG,LAM_VEG,DUMMY_INV_PRCP,RANGE_U,&
   RANGE_A,DUMMY_B_1,DUMMY_B_2!,F_RADT
  ! LAM_RADT,C_RADT,PSCALE,RANGE_B,RANGE_RADT,RANGE_CHI_P,C_CHI_P,&
  ! LAM_CHI_P 
-REAL,DIMENSION(:),ALLOCATABLE:: ALPHA_BAR, FREQ, THETA,tb_output
-real,dimension(:),allocatable:: tb_outputall !mike change to average 14 nov 14
+REAL,DIMENSION(:),ALLOCATABLE:: ALPHA_BAR, FREQ, THETA,TB_OUTPUT,TB_OUTPUTALL
 REAL,DIMENSION(:,:),ALLOCATABLE::CV,Y_IN,X_IN,TBRAW,LAM_U,LAM_ALPHA!
 REAL,DIMENSION(:,:,:),ALLOCATABLE::ALBEDO,CU,C_ALPHA
 LOGICAL :: GEN_SWITCH
@@ -470,14 +469,13 @@ X=X0_IN
 FIRST=0
 
 
-!we only want this file to open on the head node: eliminate possibility
-!of blank files from the other nodes
-if(rank.eq.0) then
-  OPEN(FILE='tbraw_t.out',UNIT=9,STATUS='UNKNOWN')
-end if
+!OPEN FILE FOR SPATIALLY-AVERAGED TB OUTPUT DIAGNOSTIC
+IF(RANK.EQ.0) THEN
+  OPEN(file='tbraw_t.out',unit=9,status='unknown')
+END IF
 
-allocate(tb_output(n_zp(1)*n_yp))
-allocate(tb_outputall(n_zp(1)*n_yp)) !mike edit 14 nov 14 for ensemble average tb
+!ALLOCATE VARIABLES FOR SPATIALLY-AVERAGED TB OUTPUT DIAGNOSTIC
+ALLOCATE(TB_OUTPUT(N_ZP(1)),TB_OUTPUTALL(N_ZP(1)))
 
 !MEASUREMENT LOOP
 DO M=1,N_M+1
@@ -706,26 +704,19 @@ DO M=1,N_M+1
       FREQ,THETA,X,N_A,N_U,U_RTM,MONTH,TBRAW,ALBEDO_IN,M,RANK,VEG_MAP,IERR,&
       F_VEG,BDRF,N_BDRF,MEAS_SWITCH,VCOVER)
 
-! mike changing this to omit the n_rl, and to allow for sum over whole ensemble
-!    14 nov 14. note n_zp(1)=12
-    do i=1,n_zp(1)*n_yp
-!     tb_output(i)=sum(tbraw(i,:))
-     tb_output(i)=sum(z(i,:)) !identical to prev. line for 1 pix (20 nov 14, md)
-    end do
+    !2.7.1B OUTPUT SPATIALLY-AVERAGED TB FOR DIAGNOSTIC
+    DO I=1,N_ZP(1)
+     TB_OUTPUT(I)=SUM(Z(I,:)) 
+    END DO
 
-!  mike trying to set up average tb over ensemble 14 nov 14
-    call mpi_reduce(tb_output,tb_outputall,n_zp(1)*n_yp,mpi_real,mpi_sum,&
-      0,mpi_comm_world,ierr)
+    CALL MPI_REDUCE(TB_OUTPUT,TB_OUTPUTALL,N_ZP(1),MPI_REAL,MPI_SUM,&
+      0,MPI_COMM_WORLD,IERR)
 
-!  mike changing to allow output only from the head node 14 nov 14
-    if(rank.eq.0)then
-      write(9,'(12(F10.4))') tb_outputall/n_r
-    end if
+    IF(RANK.EQ.0)THEN
+      WRITE(9,'(12(F10.4))') TB_OUTPUTALL/N_R
+    END IF
 
-!    OPEN(FILE='tbraw.out',UNIT=19,STATUS='UNKNOWN')
-!    write(19,*) tbraw
-!   CALL MPE_LOG_EVENT(12,M,'END MEAS CALC.')
-    deallocate(tbraw)
+    DEALLOCATE(TBRAW)
 
 
 !    !2.7.2) SAVE PRIOR STATES
